@@ -76,36 +76,44 @@ exports.handler = async (event) => {
       userPhone 
     });
 
-// 5. Salva no Firestore
+    // --- NOVA VALIDAÇÃO E LOGS ---
+    // Garante que o backend valide a resposta da API antes de tentar salvar
+    if (!payment || !payment.pix || !payment.pix.code) {
+      console.error('Resposta inválida da VizzionPay:', JSON.stringify(payment));
+      throw new Error("PIX não recebido da VizzionPay");
+    }
+
+    console.log("PIX recebido:", payment.pix.code);
+    console.log("Transaction:", payment.transactionId);
+    // ------------------------------
+
+    // 5. Salva no Firestore
     const depositRef = db.collection('deposits').doc();
     
     await depositRef.set({
       userId,
       userName,
       amount: parseFloat(amount),
-      // Proteção explícita contra undefined exigida pelo Firestore
-      pixCode: payment.pixCode || '',
-      qrImage: payment.qrImage || '',
-      transactionId: payment.transactionId || '',
-      status: 'pending',
+      // Mapeamento correto conforme a resposta da API
+      pixCode: payment.pix.code,
+      qrImage: payment.pix.base64,
+      transactionId: payment.transactionId,
+      status: payment.status || 'pending',
       gateway: 'vizzionpay',
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Se o pixCode estiver vazio (mesmo com os fallbacks), você pode querer 
-    // logar um aviso aqui para investigar depois, mas o Firestore não vai mais quebrar.
-    if (!payment.pixCode) {
-      console.warn(`[AVISO] Depósito ${depositRef.id} salvo sem pixCode. Verifique o log da VizzionPay.`);
-    }
-
+    // Retorno estruturado para o Frontend
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
-        pixCode: payment.pixCode,
-        qrImage: payment.qrImage,
+        pixCode: payment.pix.code,
+        qrCode: payment.pix.base64, // Enviando como qrCode conforme solicitado
+        qrImage: payment.pix.base64, // Mantido apenas por compatibilidade (caso o frontend ainda use qrImage)
         transactionId: payment.transactionId,
+        status: payment.status,
         depositId: depositRef.id,
         message: 'PIX gerado com sucesso'
       })
