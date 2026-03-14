@@ -1,5 +1,5 @@
 // ========================================
-// NETLIFY FUNCTION: Webhook Pagamento
+// NETLIFY FUNCTION: Webhook Pagamento (EvoPay)
 // ========================================
 const admin = require('firebase-admin');
 
@@ -19,18 +19,19 @@ exports.handler = async (event) => {
 
   try {
     const webhookData = JSON.parse(event.body);
-    
-    const status = webhookData.status; 
-    const transactionId = webhookData.id || webhookData.transactionId;
-    const amount = webhookData.amount;
+    const userId = event.queryStringParameters?.u; // Resgatado da URL customizada
+    const { status, amount } = webhookData;
 
-    if (status !== 'COMPLETED') {
-      return { statusCode: 200, body: JSON.stringify({ message: 'Status ignorado' }) };
+    if (status !== 'COMPLETED' || !userId || !amount) {
+      return { statusCode: 200, body: JSON.stringify({ message: 'Status ignorado ou dados incompletos' }) };
     }
 
+    // Busca o depósito pendente correspondente ao usuário e valor
     const depositsSnapshot = await db.collection('deposits')
-      .where('transactionId', '==', transactionId)
+      .where('userId', '==', userId)
+      .where('amount', '==', parseFloat(amount))
       .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
       .limit(1)
       .get();
 
@@ -39,9 +40,8 @@ exports.handler = async (event) => {
     }
 
     const depositDoc = depositsSnapshot.docs[0];
-    const depositData = depositDoc.data();
-    const userId = depositData.userId;
 
+    // Transação Firestore idêntica à sua original para garantir consistência
     await db.runTransaction(async (transaction) => {
       const userRef = db.collection('users').doc(userId);
       const userDoc = await transaction.get(userRef);
@@ -66,8 +66,8 @@ exports.handler = async (event) => {
         type: 'deposit',
         amount: amount,
         status: 'completed',
-        description: 'Depósito Aprovado',
-        transactionId: transactionId,
+        description: 'Depósito Aprovado (EvoPay)',
+        transactionId: depositDoc.id,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
     });
@@ -75,6 +75,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ success: true }) };
 
   } catch (error) {
+    console.error("Erro no Webhook:", error);
     return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
   }
 };
