@@ -16,16 +16,30 @@ export default function HomePage() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('/.netlify/functions/stats-today') {
-        headers: { 'Authorization': `Bearer ${token}` }
+      // Endpoint corrigido para o padrão do Netlify Functions
+      const response = await fetch('/.netlify/functions/stats-today', {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
 
       if (response.ok) {
         const data = await response.json();
-        setStats(data);
+        // Garante que o estado receba os dados ou mantenha os zeros caso o backend mande vazio
+        setStats({
+          todayEarnings: data.todayEarnings || 0,
+          newInvites: data.newInvites || 0
+        });
+      } else {
+        // Se a resposta não for 200 OK, define como 0 e loga o erro sem quebrar o app
+        console.error('Falha ao buscar estatísticas. Status:', response.status);
+        setStats({ todayEarnings: 0, newInvites: 0 });
       }
     } catch (err) {
+      // Se der erro de rede, CORS ou falha de parse (como o Unexpected token <), cai aqui e zera
       console.error('Error fetching stats:', err);
+      setStats({ todayEarnings: 0, newInvites: 0 });
     } finally {
       setLoading(false);
     }
