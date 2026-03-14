@@ -20,7 +20,6 @@ if (!admin.apps.length) {
 const db = admin.apps.length ? admin.firestore() : null;
 
 exports.handler = async (event) => {
-  // Configuração de CORS mantida
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -51,7 +50,6 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Depósito mínimo é R$ 30,00' }) };
     }
 
-    // Sanitização do nome mantida para evitar o erro do payerName
     let cleanName = (userName || "Cliente").replace(/[^a-zA-Z ]/g, "").trim();
     if (!cleanName) cleanName = "Cliente";
 
@@ -61,7 +59,7 @@ exports.handler = async (event) => {
     const SITE_URL = process.env.URL || 'http://localhost:8888';
     const callbackUrl = `${SITE_URL}/.netlify/functions/webhook-payment?u=${userId}`;
 
-    // Chamada usando Axios para a EvoPay
+    // 1. Chamada à EvoPay
     const response = await axios.post('https://pix.evopay.cash/v1/pix', {
       amount: parseFloat(amount),
       callbackUrl: callbackUrl,
@@ -71,40 +69,55 @@ exports.handler = async (event) => {
       headers: { 'API-Key': evopayToken, 'Content-Type': 'application/json' }
     });
 
+    // 2. Extração Robusta do Código PIX
     const paymentData = response.data;
     
-    // Captura o código PIX da EvoPay para a variável brCode
-    const brCode = paymentData.qrCodeText || paymentData.qrcode;
+    // Mapeamos todas as chaves possíveis para máxima compatibilidade com as respostas da API
+    const brCode = 
+      paymentData?.qrCodeText || 
+      paymentData?.qrcode || 
+      paymentData?.qrCode || 
+      paymentData?.pixCode || 
+      paymentData?.data?.qrcode || 
+      paymentData?.data?.qrCodeText;
 
-    if (!brCode) throw new Error("Código PIX não retornado pela EvoPay");
+    // Se falhar, lançamos erro com log do formato exato para depuração
+    if (!brCode) {
+      console.error("Resposta inesperada da EvoPay, brCode não encontrado:", JSON.stringify(paymentData));
+      throw new Error("Código PIX não retornado pela EvoPay. Verifique os logs.");
+    }
 
-    // Cria a URL da imagem codificando o brCode com segurança
+    // 3. Geração do link da Imagem QR Code
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(brCode)}`;
     
     const depositRef = db.collection('deposits').doc();
     
-    // Salva no Firestore
+    // 4. Salvando no Firestore
     await depositRef.set({
       userId,
       userName, 
       amount: parseFloat(amount),
-      pixCode: brCode, // Salvando o brCode
-      qrImage: qrImage, // Salvando a URL gerada
+      pixCode: brCode, 
+      qrImage: qrImage, 
       transactionId: depositRef.id,
       status: 'pending',
       gateway: 'evopay',
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Retorno EXATAMENTE como solicitado, incluindo o transactionId para o frontend caso precise
+    // 5. Retorno para o Frontend (React)
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
+        // Chaves no padrão camelCase
         pixCode: brCode,
         qrImage: qrImage,
-        transactionId: depositRef.id 
+        transactionId: depositRef.id,
+        // Chaves de segurança no padrão snake_case (referência do seu código antigo)
+        pix_code: brCode,
+        qr_image: qrImage 
       })
     };
 
@@ -113,7 +126,10 @@ exports.handler = async (event) => {
     return {
       statusCode: error.response?.status || 500,
       headers,
-      body: JSON.stringify({ success: false, error: error.response?.data?.message || error.message || 'Falha ao processar pagamento' })
+      body: JSON.stringify({ 
+        success: false, 
+        error: error.response?.data?.message || error.message || 'Falha ao processar pagamento' 
+      })
     };
   }
 };
