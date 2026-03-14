@@ -50,6 +50,16 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Depósito mínimo é R$ 30,00' }) };
     }
 
+    // --- SANITIZAÇÃO DO NOME (Fix para o erro ^[a-zA-Z ]+$ da EvoPay) ---
+    // Remove números, acentos e caracteres especiais, mantendo apenas A-Z e espaços
+    let cleanName = (userName || "Cliente").replace(/[^a-zA-Z ]/g, "").trim();
+    
+    // Fallback de segurança: se o nome era "1234", após a limpeza ficaria vazio ("").
+    if (!cleanName) {
+      cleanName = "Cliente";
+    }
+    // -------------------------------------------------------------------
+
     const evopayToken = process.env.EVOPAY_TOKEN;
     if (!evopayToken) throw new Error("Token EVOPAY_TOKEN não configurado.");
 
@@ -61,7 +71,7 @@ exports.handler = async (event) => {
     const response = await axios.post('https://pix.evopay.cash/v1/pix', {
       amount: parseFloat(amount),
       callbackUrl: callbackUrl,
-      payerName: userName,
+      payerName: cleanName, // Enviando o nome sanitizado
       payerDocument: cleanDocument
     }, {
       headers: { 'API-Key': evopayToken, 'Content-Type': 'application/json' }
@@ -78,7 +88,7 @@ exports.handler = async (event) => {
     // Salva no Firestore
     await depositRef.set({
       userId,
-      userName,
+      userName, // Mantemos o nome ORIGINAL no Firestore para seu histórico/controle
       amount: parseFloat(amount),
       pixCode: pixCode,
       qrImage: qrImage,
