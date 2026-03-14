@@ -1,69 +1,94 @@
-import { useState } from 'react';
-import { useAuth } from './useAuth';
+import React, { useState } from 'react';
+import { useDeposit } from './useDeposit'; // Ajuste o caminho do import conforme necessário
 
-export function useDeposit() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [pixCode, setPixCode] = useState<string | null>(null);
-  const [qrImage, setQrImage] = useState<string | null>(null);
+export default function DepositScreen() {
+  const { loading, pixCode, qrImage, initiateDeposit } = useDeposit();
+  const [amount, setAmount] = useState<number | ''>('');
 
-  const initiateDeposit = async (amount: number): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'Usuário não autenticado' };
-
-    setLoading(true);
-    setPixCode(null);
-    setQrImage(null);
-
-    try {
-      // Fallbacks para testes alterados: '00000000000' é rejeitado por validações rígidas de CPF.
-      const userDocument = (user as any).document || '02499967315';
-      const userPhone = (user as any).phone || '11999999999';
-
-      const response = await fetch('/.netlify/functions/create-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: amount,
-          userId: user.id,
-          userName: user.email?.split('@')[0] || 'Usuário',
-          userEmail: user.email,
-          userDocument: userDocument,
-          userPhone: userPhone
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao gerar PIX');
-      }
-
-      if (!data.success || !data.pixCode) {
-        throw new Error('Código PIX não retornado');
-      }
-
-      setPixCode(data.pixCode);
-      setQrImage(data.qrImage);
-
-      return { success: true };
-    } catch (error: any) {
-      console.error('Erro ao iniciar depósito:', error);
-      return { success: false, error: error.message || 'Erro desconhecido' };
-    } finally {
-      setLoading(false);
+  const handleGeneratePix = async () => {
+    if (!amount || Number(amount) < 30) {
+      alert('Por favor, insira um valor válido (Mínimo R$ 30,00).');
+      return;
+    }
+    
+    const { success, error } = await initiateDeposit(Number(amount));
+    
+    if (!success) {
+      alert(`Erro: ${error}`);
     }
   };
 
-  const resetDeposit = () => {
-    setPixCode(null);
-    setQrImage(null);
+  const handleCopyPix = () => {
+    if (pixCode) {
+      navigator.clipboard.writeText(pixCode);
+      alert('Código PIX copiado!');
+    }
   };
 
-  return {
-    loading,
-    pixCode,
-    qrImage,
-    initiateDeposit,
-    resetDeposit
-  };
+  return (
+    <div style={{ maxWidth: '400px', margin: '0 auto', textAlign: 'center', padding: '20px' }}>
+      <h2>Depositar via PIX</h2>
+
+      {/* Formulário de Depósito (Aparece apenas se o PIX ainda não foi gerado) */}
+      {!pixCode && (
+        <div style={{ marginBottom: '20px' }}>
+          <input
+            type="number"
+            placeholder="Valor do depósito (Ex: 50.00)"
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            style={{ padding: '10px', width: '100%', marginBottom: '10px' }}
+          />
+          <button 
+            onClick={handleGeneratePix} 
+            disabled={loading}
+            style={{ padding: '10px 20px', cursor: loading ? 'not-allowed' : 'pointer' }}
+          >
+            {loading ? 'Gerando PIX...' : 'Gerar PIX'}
+          </button>
+        </div>
+      )}
+
+      {/* Área do PIX Gerado */}
+      {(pixCode || qrImage) && (
+        <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginTop: '20px' }}>
+          
+          {/* 1. Valor do depósito */}
+          <h3>Valor do depósito: R$ {Number(amount).toFixed(2).replace('.', ',')}</h3>
+
+          {/* 2. QR Code PIX (Aparece somente se qrImage existir) */}
+          {qrImage && (
+            <div style={{ margin: '20px 0' }}>
+              <img
+                src={qrImage}
+                alt="QR Code PIX"
+                style={{ width: 250, height: 250 }}
+              />
+            </div>
+          )}
+
+          {/* 3. Código PIX copia e cola */}
+          {pixCode && (
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '5px' }}>Código Copia e Cola:</p>
+              <textarea
+                readOnly
+                value={pixCode}
+                style={{ width: '100%', height: '80px', padding: '10px', resize: 'none', marginBottom: '10px' }}
+              />
+              <button onClick={handleCopyPix} style={{ padding: '8px 16px', cursor: 'pointer' }}>
+                Copiar Código
+              </button>
+            </div>
+          )}
+
+          {/* 4. Mensagem de aguardando */}
+          <div style={{ marginTop: '20px', color: '#666', fontWeight: 'bold' }}>
+            ⏳ Aguardando pagamento...
+          </div>
+          
+        </div>
+      )}
+    </div>
+  );
 }
