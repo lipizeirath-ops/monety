@@ -20,6 +20,7 @@ if (!admin.apps.length) {
 const db = admin.apps.length ? admin.firestore() : null;
 
 exports.handler = async (event) => {
+  // Configuração de CORS mantida
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -50,64 +51,60 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Depósito mínimo é R$ 30,00' }) };
     }
 
-    // --- SANITIZAÇÃO DO NOME (Fix para o erro ^[a-zA-Z ]+$ da EvoPay) ---
-    // Remove números, acentos e caracteres especiais, mantendo apenas A-Z e espaços
+    // Sanitização do nome mantida para evitar o erro do payerName
     let cleanName = (userName || "Cliente").replace(/[^a-zA-Z ]/g, "").trim();
-    
-    // Fallback de segurança: se o nome era "1234", após a limpeza ficaria vazio ("").
-    if (!cleanName) {
-      cleanName = "Cliente";
-    }
-    // -------------------------------------------------------------------
+    if (!cleanName) cleanName = "Cliente";
 
     const evopayToken = process.env.EVOPAY_TOKEN;
     if (!evopayToken) throw new Error("Token EVOPAY_TOKEN não configurado.");
 
-    // Webhook URL com userId na query string
     const SITE_URL = process.env.URL || 'http://localhost:8888';
     const callbackUrl = `${SITE_URL}/.netlify/functions/webhook-payment?u=${userId}`;
 
-    // Chamada API EvoPay
+    // Chamada usando Axios para a EvoPay
     const response = await axios.post('https://pix.evopay.cash/v1/pix', {
       amount: parseFloat(amount),
       callbackUrl: callbackUrl,
-      payerName: cleanName, // Enviando o nome sanitizado
+      payerName: cleanName,
       payerDocument: cleanDocument
     }, {
       headers: { 'API-Key': evopayToken, 'Content-Type': 'application/json' }
     });
 
     const paymentData = response.data;
-    const pixCode = paymentData.qrCodeText || paymentData.qrcode;
+    
+    // Captura o código PIX da EvoPay para a variável brCode
+    const brCode = paymentData.qrCodeText || paymentData.qrcode;
 
-    if (!pixCode) throw new Error("Código PIX não retornado pela EvoPay");
+    if (!brCode) throw new Error("Código PIX não retornado pela EvoPay");
 
-    const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixCode)}`;
+    // Cria a URL da imagem codificando o brCode com segurança
+    const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(brCode)}`;
+    
     const depositRef = db.collection('deposits').doc();
     
     // Salva no Firestore
     await depositRef.set({
       userId,
-      userName, // Mantemos o nome ORIGINAL no Firestore para seu histórico/controle
+      userName, 
       amount: parseFloat(amount),
-      pixCode: pixCode,
-      qrImage: qrImage,
+      pixCode: brCode, // Salvando o brCode
+      qrImage: qrImage, // Salvando a URL gerada
       transactionId: depositRef.id,
       status: 'pending',
       gateway: 'evopay',
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Retorno EXATAMENTE como solicitado, incluindo o transactionId para o frontend caso precise
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
-        pixCode: pixCode,
+        pixCode: brCode,
         qrImage: qrImage,
-        transactionId: depositRef.id,
-        depositId: depositRef.id,
-        message: 'PIX gerado com sucesso'
+        transactionId: depositRef.id 
       })
     };
 
