@@ -11,6 +11,9 @@ import ProductsPage from './pages/ProductsPage';
 import ProfilePage from './pages/ProfilePage';
 import TeamPage from './pages/TeamPage';
 
+// Importação do novo componente de Depósito
+import DepositScreen from './components/DepositScreen';
+
 // Layout para rotas protegidas
 function PrivateLayout() {
   const { user } = useAuth();
@@ -83,6 +86,9 @@ function AppRoutes() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/team" element={<TeamPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        
+        {/* Nova rota para a tela de depósito */}
+        <Route path="/deposit" element={<DepositScreen />} />
       </Route>
 
       {/* Rota Padrão 404 */}
