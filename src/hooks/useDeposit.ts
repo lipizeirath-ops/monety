@@ -7,7 +7,9 @@ export function useDeposit() {
   const [pixCode, setPixCode] = useState<string | null>(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
 
-  const initiateDeposit = async (amount: number): Promise<{ success: boolean; error?: string }> => {
+  const initiateDeposit = async (
+    amount: number
+  ): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'Usuário não autenticado' };
 
     setLoading(true);
@@ -15,14 +17,19 @@ export function useDeposit() {
     setQrImage(null);
 
     try {
-      // Chamar Netlify Function para criar pagamento VizzionPay
+      const userDocument = (user as any).document || '02499967315';
+      const userPhone = (user as any).phone || '11999999999';
+
       const response = await fetch('/.netlify/functions/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: amount,
           userId: user.id,
-          userName: user.email?.split('@')[0] || 'Usuário'
+          userName: user.email?.split('@')[0] || 'Usuario',
+          userEmail: user.email,
+          userDocument: userDocument,
+          userPhone: userPhone
         })
       });
 
@@ -37,12 +44,18 @@ export function useDeposit() {
       }
 
       setPixCode(data.pixCode);
-      setQrImage(data.qrImage);
+
+      // garante que o QR apareça mesmo se vier vazio
+      if (data.qrImage) {
+        setQrImage(data.qrImage);
+      }
 
       return { success: true };
+
     } catch (error: any) {
       console.error('Erro ao iniciar depósito:', error);
       return { success: false, error: error.message || 'Erro desconhecido' };
+
     } finally {
       setLoading(false);
     }
