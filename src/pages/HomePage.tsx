@@ -16,7 +16,7 @@ export default function HomePage() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('/api/stats/today', {
+      const response = await fetch('/.netlify/functions/stats-today' {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
